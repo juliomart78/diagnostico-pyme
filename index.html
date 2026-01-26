@@ -1,0 +1,1064 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Pre-Diagnóstico Organizacional | PYMEs</title>
+
+    <!-- Tailwind (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        theme: {
+          extend: {
+            colors: {
+              brand: {
+                50: "#eef2ff",
+                100: "#e0e7ff",
+                200: "#c7d2fe",
+                300: "#a5b4fc",
+                400: "#818cf8",
+                500: "#6366f1",
+                600: "#4f46e5",
+                700: "#4338ca",
+                800: "#3730a3",
+                900: "#312e81",
+              },
+            },
+          },
+        },
+      };
+    </script>
+
+    <!-- React 18 (CDN) -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+
+    <!-- Babel (for JSX) -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <style>
+      html, body { height: 100%; }
+    </style>
+  </head>
+
+  <body class="min-h-screen bg-slate-50 text-slate-900">
+    <div id="root"></div>
+
+    <script type="text/babel">
+      const { useEffect, useMemo, useRef, useState } = React;
+
+      /***********************
+       *  Utilities
+       ***********************/
+      const STORAGE_KEYS = {
+        records: "osc_prediagnostico_records_v1",
+        draft: "osc_prediagnostico_draft_v1",
+      };
+
+      function safeParseJSON(value, fallback) {
+        try { return JSON.parse(value); } catch { return fallback; }
+      }
+
+      function formatDateTimeISO(dt = new Date()) {
+        const pad = (n) => String(n).padStart(2, "0");
+        return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
+      }
+
+      function clamp(n, min, max) { return Math.max(min, Math.min(max, n)); }
+
+      function scoreColor(score) {
+        if (score >= 75) return "emerald";
+        if (score >= 50) return "amber";
+        return "rose";
+      }
+
+      function scoreLabel(score) {
+        if (score >= 85) return "Excelente";
+        if (score >= 75) return "Sólido";
+        if (score >= 50) return "Mejorable";
+        if (score >= 25) return "Crítico";
+        return "Muy crítico";
+      }
+
+      function progressWidth(score) { return `${clamp(score, 0, 100)}%`; }
+
+      function toTxtFilename(customer) {
+        const base = (customer?.empresa || "empresa")
+          .toString()
+          .trim()
+          .toLowerCase()
+          .replace(/\s+/g, "-")
+          .replace(/[^a-z0-9\-]/g, "");
+        const date = new Date();
+        const pad = (n) => String(n).padStart(2, "0");
+        const stamp = `${date.getFullYear()}${pad(date.getMonth() + 1)}${pad(date.getDate())}-${pad(date.getHours())}${pad(date.getMinutes())}`;
+        return `prediagnostico-${base || "pyme"}-${stamp}.txt`;
+      }
+
+      /***********************
+       *  Questionnaire Data (25)
+       ***********************/
+      const SCALE = [0, 25, 50, 75, 100];
+
+      const CATEGORIES = [
+        {
+          id: "estrategia",
+          name: "Gestión Estratégica y Liderazgo",
+          description: "Dirección, claridad estratégica, liderazgo, seguimiento y toma de decisiones.",
+          questions: [
+            "¿La empresa cuenta con objetivos estratégicos claros y comunicados a los líderes?",
+            "¿Existen indicadores (KPIs) y revisiones periódicas para dar seguimiento a resultados?",
+            "¿El liderazgo promueve disciplina operativa, cultura de mejora y rendición de cuentas?",
+            "¿Las decisiones importantes se toman con datos y criterios consistentes (no solo urgencias)?",
+          ],
+        },
+        {
+          id: "finanzas",
+          name: "Finanzas y Contabilidad",
+          description: "Control financiero, rentabilidad, flujo de efectivo, registros y planeación.",
+          questions: [
+            "¿Se cuenta con estados financieros confiables y oportunos (mensual o al menos trimestral)?",
+            "¿La empresa monitorea flujo de efectivo (cash flow) y tiene control de cuentas por cobrar/pagar?",
+            "¿Se conoce la rentabilidad por producto/servicio/cliente y se usa para decidir precios o mix?",
+            "¿Existe presupuesto anual y comparación real vs. presupuesto con acciones correctivas?",
+            "¿Hay controles para prevenir errores/fraudes (autorizaciones, conciliaciones, segregación)?",
+          ],
+        },
+        {
+          id: "operaciones",
+          name: "Operaciones y Procesos",
+          description: "Estandarización, calidad, tiempos, productividad, retrabajos y mejora continua.",
+          questions: [
+            "¿Los procesos clave están documentados y estandarizados (procedimientos, instructivos, roles)?",
+            "¿Se miden tiempos, calidad y desperdicios/retrabajos para mejorar productividad?",
+            "¿La operación es predecible (cumple plazos, calidad y volumen) sin depender de héroes?",
+            "¿Existe un sistema formal para resolver causas raíz (acciones correctivas y preventivas)?",
+          ],
+        },
+        {
+          id: "rh",
+          name: "Recursos Humanos",
+          description: "Estructura, perfiles, capacitación, evaluación de desempeño y clima laboral.",
+          questions: [
+            "¿Puestos y responsabilidades están claros (organigrama, descripciones y autoridad definida)?",
+            "¿Existen procesos de reclutamiento/inducción y capacitación con evidencia y seguimiento?",
+            "¿Se evalúa el desempeño con criterios claros y se gestionan brechas de habilidades?",
+            "¿La empresa gestiona clima/rotación/ausentismo y atiende riesgos psicosociales de forma preventiva?",
+          ],
+        },
+        {
+          id: "comercial",
+          name: "Comercial y Marketing",
+          description: "Prospección, ventas, posicionamiento, experiencia del cliente y gestión de cartera.",
+          questions: [
+            "¿La empresa tiene propuesta de valor clara y diferenciadores definidos para su mercado?",
+            "¿Existe proceso comercial (prospectos→cierre) con métricas (conversión, ticket, ciclo de venta)?",
+            "¿Se da seguimiento a satisfacción del cliente, quejas y retención con acciones concretas?",
+            "¿Las estrategias de marketing y canales (digital/tradicional) se ejecutan con plan y medición?",
+          ],
+        },
+        {
+          id: "tecnologia",
+          name: "Tecnología y Sistemas",
+          description: "Herramientas digitales, integridad de datos, automatización y ciberseguridad básica.",
+          questions: [
+            "¿Los sistemas actuales (ERP/CRM/contabilidad) soportan la operación sin duplicidad o capturas manuales excesivas?",
+            "¿La empresa asegura integridad de datos (respaldos, accesos, versiones, responsables)?",
+            "¿Se usan herramientas para automatizar reportes y tomar decisiones con datos (dashboards)?",
+            "¿Hay prácticas mínimas de ciberseguridad (contraseñas, 2FA donde aplique, capacitación, políticas)?",
+          ],
+        },
+      ];
+
+      const TOTAL_QUESTIONS = CATEGORIES.reduce((acc, c) => acc + c.questions.length, 0);
+
+      /***********************
+       *  Components
+       ***********************/
+      function Badge({ tone = "brand", children }) {
+        const toneMap = {
+          brand: "bg-brand-100 text-brand-800 ring-1 ring-inset ring-brand-200",
+          slate: "bg-slate-100 text-slate-700 ring-1 ring-inset ring-slate-200",
+          emerald: "bg-emerald-100 text-emerald-800 ring-1 ring-inset ring-emerald-200",
+          amber: "bg-amber-100 text-amber-800 ring-1 ring-inset ring-amber-200",
+          rose: "bg-rose-100 text-rose-800 ring-1 ring-inset ring-rose-200",
+        };
+        return (
+          <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-semibold ${toneMap[tone]}`}>
+            {children}
+          </span>
+        );
+      }
+
+      function Card({ children, className = "" }) {
+        return (
+          <div className={`rounded-2xl bg-white shadow-sm ring-1 ring-slate-200 ${className}`}>
+            {children}
+          </div>
+        );
+      }
+
+      function ProgressBar({ value }) {
+        const tone = scoreColor(value);
+        const barTone = { emerald: "bg-emerald-500", amber: "bg-amber-500", rose: "bg-rose-500" }[tone];
+        return (
+          <div className="w-full rounded-full bg-slate-100 ring-1 ring-inset ring-slate-200">
+            <div className={`h-2.5 rounded-full ${barTone}`} style={{ width: progressWidth(value) }} />
+          </div>
+        );
+      }
+
+      function SectionHeader({ title, subtitle, right }) {
+        return (
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+            <div>
+              <h2 className="text-lg font-semibold text-slate-900">{title}</h2>
+              {subtitle ? <p className="mt-1 text-sm text-slate-600">{subtitle}</p> : null}
+            </div>
+            {right ? <div className="shrink-0">{right}</div> : null}
+          </div>
+        );
+      }
+
+      /***********************
+       *  App
+       ***********************/
+      function App() {
+        const [step, setStep] = useState("inicio"); // inicio | cuestionario | resultados | historial
+
+        const [customer, setCustomer] = useState({
+          nombre: "",
+          empresa: "",
+          email: "",
+          telefono: "",
+          cargo: "",
+          industria: "",
+          empleados: "",
+        });
+
+        // responses[categoryId][qIndex] = score (0..100)
+        const [responses, setResponses] = useState(() => {
+          const obj = {};
+          CATEGORIES.forEach((c) => (obj[c.id] = Array(c.questions.length).fill(null)));
+          return obj;
+        });
+
+        const [aiAnalysis, setAiAnalysis] = useState("");
+        const [loadingAI, setLoadingAI] = useState(false);
+        const [errorAI, setErrorAI] = useState("");
+
+        const [records, setRecords] = useState([]);
+        const topRef = useRef(null);
+
+        // Load storage on mount
+        useEffect(() => {
+          const savedRecords = safeParseJSON(localStorage.getItem(STORAGE_KEYS.records), []);
+          setRecords(Array.isArray(savedRecords) ? savedRecords : []);
+
+          const savedDraft = safeParseJSON(localStorage.getItem(STORAGE_KEYS.draft), null);
+          if (savedDraft?.customer) setCustomer(savedDraft.customer);
+          if (savedDraft?.responses) setResponses(savedDraft.responses);
+          if (savedDraft?.aiAnalysis) setAiAnalysis(savedDraft.aiAnalysis);
+          if (savedDraft?.step) setStep(savedDraft.step);
+        }, []);
+
+        // Save draft on changes
+        useEffect(() => {
+          const draft = { customer, responses, aiAnalysis, step };
+          localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
+        }, [customer, responses, aiAnalysis, step]);
+
+        const questionCountAnswered = useMemo(() => {
+          let answered = 0;
+          CATEGORIES.forEach((c) => responses[c.id].forEach((v) => { if (typeof v === "number") answered += 1; }));
+          return answered;
+        }, [responses]);
+
+        const scoresByArea = useMemo(() => {
+          const result = {};
+          CATEGORIES.forEach((c) => {
+            const vals = responses[c.id].filter((v) => typeof v === "number");
+            const avg = vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 0;
+            result[c.id] = avg;
+          });
+          return result;
+        }, [responses]);
+
+        const globalScore = useMemo(() => {
+          const all = [];
+          CATEGORIES.forEach((c) => all.push(...responses[c.id].filter((v) => typeof v === "number")));
+          if (all.length === 0) return 0;
+          return Math.round(all.reduce((a, b) => a + b, 0) / all.length);
+        }, [responses]);
+
+        const completionPct = useMemo(() => Math.round((questionCountAnswered / TOTAL_QUESTIONS) * 100), [questionCountAnswered]);
+
+        function scrollTop() {
+          if (topRef.current) topRef.current.scrollIntoView({ behavior: "smooth" });
+          else window.scrollTo({ top: 0, behavior: "smooth" });
+        }
+
+        function updateCustomer(field, value) {
+          setCustomer((prev) => ({ ...prev, [field]: value }));
+        }
+
+        function setAnswer(categoryId, qIndex, value) {
+          setResponses((prev) => {
+            const next = { ...prev };
+            const arr = [...next[categoryId]];
+            arr[qIndex] = value;
+            next[categoryId] = arr;
+            return next;
+          });
+        }
+
+        function validateCustomer() {
+          const required = ["nombre", "empresa", "email", "telefono", "cargo", "industria", "empleados"];
+          for (const k of required) if (!String(customer[k] || "").trim()) return false;
+          if (!/^\S+@\S+\.\S+$/.test(customer.email.trim())) return false;
+          return true;
+        }
+
+        function allQuestionsAnswered() {
+          for (const c of CATEGORIES) for (const v of responses[c.id]) if (typeof v !== "number") return false;
+          return true;
+        }
+
+        function buildAIInput() {
+          const detail = CATEGORIES.map((c) => {
+            const qLines = c.questions.map((q, i) => {
+              const v = responses[c.id][i];
+              return `- P${i + 1}: ${q}\n  Respuesta: ${v}/100`;
+            });
+            return `## ${c.name}\nPuntuación promedio del área: ${scoresByArea[c.id]}/100\n${qLines.join("\n")}`;
+          }).join("\n\n");
+
+          const meta = `Cliente: ${customer.nombre}
+Empresa: ${customer.empresa}
+Cargo: ${customer.cargo}
+Industria: ${customer.industria}
+Empleados: ${customer.empleados}
+Email: ${customer.email}
+Teléfono: ${customer.telefono}
+Fecha: ${formatDateTimeISO()}
+Puntuación global (promedio): ${globalScore}/100
+`;
+          return { meta, detail };
+        }
+
+        function buildPromptForClaude() {
+          const { meta, detail } = buildAIInput();
+          return `
+Eres un consultor senior en diagnóstico organizacional para PYMEs en México.
+Debes generar un informe profesional en español, directo y accionable, con enfoque operativo y de gestión.
+NO inventes datos: usa únicamente la información proporcionada.
+
+REQUISITOS DE FORMATO (OBLIGATORIO):
+1) Inicia con: "RESUMEN EJECUTIVO" (máximo 10 líneas, sin viñetas muy largas).
+2) Después, incluye secciones con estos encabezados EXACTOS:
+   - "DIAGNÓSTICO GENERAL"
+   - "ÁREAS CRÍTICAS"
+   - "ÁREAS FUERTES"
+   - "¿REQUIERE CONSULTOR EXTERNO? (SI/NO)"
+   - "PLAN DE ACCIÓN PRIORIZADO (0-30 / 31-60 / 61-90 días)"
+   - "RECOMENDACIONES FINALES"
+3) En "PLAN DE ACCIÓN..." incluye una tabla en texto con columnas:
+   Acciones | Responsable sugerido | Urgencia (Alta/Media/Baja) | Impacto (Alto/Medio/Bajo) | Notas
+4) El dictamen SI/NO debe ser claro y justificarse en 4-6 líneas.
+5) Identifica Quick Wins (acciones inmediatas) y riesgos si no se actúa.
+
+CONTEXTO Y RESULTADOS:
+${meta}
+
+DETALLE POR ÁREA Y PREGUNTAS:
+${detail}
+`.trim();
+        }
+
+        function buildRecord(reportText) {
+          return {
+            id: crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()),
+            createdAt: new Date().toISOString(),
+            createdAtLocal: formatDateTimeISO(),
+            customer: { ...customer },
+            responses: { ...responses },
+            scoresByArea: { ...scoresByArea },
+            globalScore,
+            aiAnalysis: reportText || "",
+          };
+        }
+
+        function saveRecord(record) {
+          const next = [record, ...records];
+          setRecords(next);
+          localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(next));
+        }
+
+        async function generateAnalysis() {
+          setErrorAI("");
+
+          if (!validateCustomer()) {
+            setErrorAI("Faltan datos del cliente o el email no es válido. Revisa la pantalla inicial.");
+            return;
+          }
+          if (!allQuestionsAnswered()) {
+            setErrorAI("Debes contestar todas las preguntas antes de generar el análisis con IA.");
+            return;
+          }
+
+          setLoadingAI(true);
+          setAiAnalysis("");
+
+          try {
+            const prompt = buildPromptForClaude();
+
+            // ✅ NUEVO: llama a tu backend /api/analyze (Vercel/Netlify Function)
+            const r = await fetch("/api/analyze", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ prompt }),
+            });
+
+            if (!r.ok) {
+              const err = await r.json().catch(() => ({}));
+              throw new Error(err?.detail || err?.error || `Error HTTP ${r.status}`);
+            }
+
+            const data = await r.json();
+            const text = (data?.text || "").trim();
+
+            if (!text) throw new Error("La respuesta de la IA llegó vacía. Intenta nuevamente.");
+
+            setAiAnalysis(text);
+
+            const rec = buildRecord(text);
+            saveRecord(rec);
+
+            setStep("resultados");
+            scrollTop();
+          } catch (err) {
+            setErrorAI(err?.message || "Ocurrió un error al generar el análisis.");
+          } finally {
+            setLoadingAI(false);
+          }
+        }
+
+        function buildFullReportText() {
+          const header = `PRE-DIAGNÓSTICO ORGANIZACIONAL (PYME)
+========================================
+Fecha: ${formatDateTimeISO()}
+
+DATOS DEL CLIENTE
+- Nombre: ${customer.nombre}
+- Empresa: ${customer.empresa}
+- Cargo: ${customer.cargo}
+- Industria: ${customer.industria}
+- Número de empleados: ${customer.empleados}
+- Email: ${customer.email}
+- Teléfono: ${customer.telefono}
+
+PUNTUACIONES
+- Global: ${globalScore}/100 (${scoreLabel(globalScore)})
+${CATEGORIES.map((c) => `- ${c.name}: ${scoresByArea[c.id]}/100 (${scoreLabel(scoresByArea[c.id])})`).join("\n")}
+
+ANÁLISIS CON IA
+========================================
+`;
+
+          const detailAnswers = `
+
+DETALLE DE RESPUESTAS
+========================================
+${CATEGORIES.map((c) => {
+  const lines = c.questions.map((q, i) => `- ${q}\n  Respuesta: ${responses[c.id][i]}/100`);
+  return `${c.name}\n${"-".repeat(c.name.length)}\n${lines.join("\n")}`;
+}).join("\n\n")}
+`;
+          return header + (aiAnalysis || "(Aún no se ha generado el análisis con IA.)") + detailAnswers;
+        }
+
+        function downloadTXT() {
+          const report = buildFullReportText();
+          const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = toTxtFilename(customer);
+          document.body.appendChild(a);
+          a.click();
+          a.remove();
+          URL.revokeObjectURL(url);
+        }
+
+        async function copySummary() {
+          const report = buildFullReportText();
+          const m = report.match(/RESUMEN EJECUTIVO([\s\S]*?)\n\nDIAGNÓSTICO GENERAL/);
+          const summary = (m && m[1] ? m[1].trim() : "").slice(0, 2000);
+          const textToCopy = summary ? `RESUMEN EJECUTIVO\n${summary}` : report.slice(0, 2000);
+
+          try {
+            await navigator.clipboard.writeText(textToCopy);
+            alert("Resumen copiado al portapapeles.");
+          } catch {
+            const ta = document.createElement("textarea");
+            ta.value = textToCopy;
+            document.body.appendChild(ta);
+            ta.select();
+            document.execCommand("copy");
+            ta.remove();
+            alert("Resumen copiado al portapapeles.");
+          }
+        }
+
+        function resetAll() {
+          if (!confirm("¿Deseas reiniciar el cuestionario? Se conservará el historial guardado.")) return;
+          setCustomer({ nombre:"", empresa:"", email:"", telefono:"", cargo:"", industria:"", empleados:"" });
+          const obj = {};
+          CATEGORIES.forEach((c) => (obj[c.id] = Array(c.questions.length).fill(null)));
+          setResponses(obj);
+          setAiAnalysis("");
+          setErrorAI("");
+          setLoadingAI(false);
+          setStep("inicio");
+          scrollTop();
+        }
+
+        function clearHistory() {
+          if (!confirm("¿Eliminar TODO el historial guardado en este navegador?")) return;
+          setRecords([]);
+          localStorage.removeItem(STORAGE_KEYS.records);
+          alert("Historial eliminado.");
+        }
+
+        function loadRecord(rec) {
+          if (!rec) return;
+          setCustomer(rec.customer || customer);
+          setResponses(rec.responses || responses);
+          setAiAnalysis(rec.aiAnalysis || "");
+          setStep("resultados");
+          scrollTop();
+        }
+
+        const StepPill = ({ active, label, onClick }) => (
+          <button
+            onClick={onClick}
+            className={`inline-flex items-center gap-2 rounded-full px-3 py-1.5 text-xs font-semibold ring-1 ring-inset transition ${
+              active ? "bg-brand-600 text-white ring-brand-700" : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+            }`}
+          >
+            {label}
+          </button>
+        );
+
+        return (
+          <div ref={topRef}>
+            {/* Top Bar */}
+            <div className="sticky top-0 z-30 border-b border-slate-200 bg-white/80 backdrop-blur">
+              <div className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
+                <div className="flex items-center gap-3">
+                  <div className="grid h-10 w-10 place-items-center rounded-2xl bg-gradient-to-br from-brand-600 to-brand-800 text-white shadow-sm">
+                    <span className="text-sm font-bold">OSC</span>
+                  </div>
+                  <div>
+                    <div className="text-sm font-semibold text-slate-900">Pre-Diagnóstico Organizacional</div>
+                    <div className="text-xs text-slate-600">Sistema autocalificable para PYMEs (25 preguntas)</div>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <StepPill active={step === "inicio"} label="1) Datos" onClick={() => setStep("inicio")} />
+                  <StepPill active={step === "cuestionario"} label="2) Cuestionario" onClick={() => setStep("cuestionario")} />
+                  <StepPill active={step === "resultados"} label="3) Resultados" onClick={() => setStep("resultados")} />
+                  <StepPill active={step === "historial"} label="Historial" onClick={() => setStep("historial")} />
+                </div>
+              </div>
+            </div>
+
+            {/* Main */}
+            <main className="mx-auto max-w-6xl px-4 py-8">
+              {/* Header summary */}
+              <div className="mb-6 grid gap-4 md:grid-cols-3">
+                <Card className="p-5 md:col-span-2">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <h1 className="text-xl font-bold tracking-tight text-slate-900">Evaluación rápida — diagnóstico inicial</h1>
+                      <p className="mt-1 text-sm text-slate-600">
+                        Captura datos, responde 25 preguntas y genera un informe con IA (Claude Sonnet 4) para priorizar acciones.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Badge tone="slate">{TOTAL_QUESTIONS} preguntas</Badge>
+                      <Badge tone="brand">{completionPct}% completado</Badge>
+                    </div>
+                  </div>
+
+                  <div className="mt-4">
+                    <ProgressBar value={completionPct} />
+                    <div className="mt-2 flex items-center justify-between text-xs text-slate-600">
+                      <span>Respondidas: <b>{questionCountAnswered}</b> / {TOTAL_QUESTIONS}</span>
+                      <span className="font-medium">Global estimado: {globalScore}/100</span>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="text-xs text-slate-600">
+                      <b>Nota:</b> Este sitio llama a <b>/api/analyze</b> (backend) para proteger la API key de Anthropic.
+                    </div>
+                    <button
+                      onClick={resetAll}
+                      className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                    >
+                      Reiniciar
+                    </button>
+                  </div>
+                </Card>
+
+                <Card className="p-5">
+                  <SectionHeader title="Estado del sistema" subtitle="Verificación rápida" />
+                  <div className="mt-4 space-y-3">
+                    <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 ring-1 ring-inset ring-slate-200">
+                      Endpoint requerido: <b>/api/analyze</b>
+                      <br />
+                      Configura en Vercel la variable: <b>ANTHROPIC_API_KEY</b>
+                    </div>
+                    <div className="rounded-xl bg-brand-50 p-3 text-xs text-brand-900 ring-1 ring-inset ring-brand-200">
+                      Si estás probando en local sin backend, la generación con IA fallará (es normal).
+                      En Vercel funcionará al desplegar.
+                    </div>
+                  </div>
+                </Card>
+              </div>
+
+              {/* Step content */}
+              {step === "inicio" && (
+                <Card className="p-6">
+                  <SectionHeader
+                    title="1) Datos del cliente"
+                    subtitle="Completa los datos para generar el informe final"
+                    right={
+                      <button
+                        onClick={() => {
+                          if (!validateCustomer()) {
+                            alert("Completa todos los campos y verifica que el email sea válido.");
+                            return;
+                          }
+                          setStep("cuestionario");
+                          scrollTop();
+                        }}
+                        className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+                      >
+                        Continuar a cuestionario
+                      </button>
+                    }
+                  />
+
+                  <div className="mt-6 grid gap-4 md:grid-cols-2">
+                    {[
+                      ["nombre", "Nombre completo"],
+                      ["empresa", "Empresa"],
+                      ["email", "Email"],
+                      ["telefono", "Teléfono"],
+                      ["cargo", "Cargo"],
+                      ["industria", "Industria"],
+                      ["empleados", "Número de empleados"],
+                    ].map(([key, label]) => (
+                      <div key={key} className={key === "empleados" ? "md:col-span-2" : ""}>
+                        <label className="block text-xs font-semibold text-slate-700">
+                          {label} <span className="text-rose-600">*</span>
+                        </label>
+                        <input
+                          value={customer[key]}
+                          onChange={(e) => updateCustomer(key, e.target.value)}
+                          className="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none ring-brand-200 focus:ring-2"
+                          placeholder={label}
+                          type={key === "email" ? "email" : "text"}
+                        />
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="mt-6 rounded-2xl bg-brand-50 p-4 ring-1 ring-inset ring-brand-200">
+                    <div className="text-sm font-semibold text-brand-900">Recomendación práctica</div>
+                    <p className="mt-1 text-sm text-brand-900/80">
+                      Este pre-diagnóstico detecta brechas comunes en PYMEs: estrategia, control financiero, estandarización operativa,
+                      RH, proceso comercial y base tecnológica. El informe prioriza acciones por horizonte 0-30 / 31-60 / 61-90 días.
+                    </p>
+                  </div>
+                </Card>
+              )}
+
+              {step === "cuestionario" && (
+                <div className="space-y-5">
+                  <Card className="p-6">
+                    <SectionHeader
+                      title="2) Cuestionario (25 preguntas)"
+                      subtitle="Selecciona un puntaje por pregunta (0–25–50–75–100)"
+                      right={
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => {
+                              if (!validateCustomer()) {
+                                alert("Primero completa los datos del cliente y verifica el email.");
+                                setStep("inicio");
+                                scrollTop();
+                                return;
+                              }
+                              if (!allQuestionsAnswered()) {
+                                alert("Aún faltan preguntas por responder.");
+                                return;
+                              }
+                              generateAnalysis();
+                            }}
+                            className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
+                            disabled={loadingAI}
+                          >
+                            {loadingAI ? "Generando análisis..." : "Finalizar y generar informe"}
+                          </button>
+                        </div>
+                      }
+                    />
+
+                    {errorAI ? (
+                      <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-inset ring-rose-200">
+                        <b>Error:</b> {errorAI}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 grid gap-3 md:grid-cols-2">
+                      {CATEGORIES.map((c) => {
+                        const area = scoresByArea[c.id];
+                        const tone = scoreColor(area);
+                        const toneMap = {
+                          emerald: "bg-emerald-50 ring-emerald-200 text-emerald-900",
+                          amber: "bg-amber-50 ring-amber-200 text-amber-900",
+                          rose: "bg-rose-50 ring-rose-200 text-rose-900",
+                        };
+                        return (
+                          <div key={c.id} className={`rounded-2xl p-4 ring-1 ${toneMap[tone]}`}>
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <div className="text-sm font-semibold">{c.name}</div>
+                                <div className="mt-1 text-xs opacity-80">{c.description}</div>
+                              </div>
+                              <Badge tone={tone}>{area}/100</Badge>
+                            </div>
+                            <div className="mt-3">
+                              <ProgressBar value={area} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    <div className="mt-5 rounded-2xl bg-slate-50 p-4 ring-1 ring-inset ring-slate-200">
+                      <div className="text-xs text-slate-700">
+                        <b>Guía rápida para calificar:</b> 0 = inexistente/descontrol, 25 = muy parcial,
+                        50 = básico irregular, 75 = establecido consistente, 100 = óptimo y medido.
+                      </div>
+                    </div>
+                  </Card>
+
+                  {/* Questions */}
+                  {CATEGORIES.map((c) => {
+                    const area = scoresByArea[c.id];
+                    const tone = scoreColor(area);
+                    const headerTone = { emerald: "from-emerald-600 to-emerald-700", amber: "from-amber-600 to-amber-700", rose: "from-rose-600 to-rose-700" }[tone];
+
+                    return (
+                      <Card key={c.id} className="overflow-hidden">
+                        <div className={`bg-gradient-to-r ${headerTone} px-6 py-4 text-white`}>
+                          <div className="flex items-center justify-between">
+                            <div>
+                              <div className="text-sm font-semibold">{c.name}</div>
+                              <div className="text-xs text-white/80">{c.description}</div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-white/80">Promedio</div>
+                              <div className="text-lg font-bold">{area}/100</div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="p-6">
+                          <div className="space-y-5">
+                            {c.questions.map((q, idx) => {
+                              const current = responses[c.id][idx];
+                              return (
+                                <div key={idx} className="rounded-2xl bg-white">
+                                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                    <div className="max-w-3xl">
+                                      <div className="text-sm font-semibold text-slate-900">{idx + 1}. {q}</div>
+                                      <div className="mt-1 text-xs text-slate-600">Selecciona un puntaje</div>
+                                    </div>
+
+                                    <div className="flex flex-wrap gap-2">
+                                      {SCALE.map((val) => {
+                                        const active = current === val;
+                                        return (
+                                          <button
+                                            key={val}
+                                            onClick={() => setAnswer(c.id, idx, val)}
+                                            className={`rounded-xl px-3 py-1.5 text-sm font-semibold ring-1 ring-inset transition ${
+                                              active ? "bg-brand-600 text-white ring-brand-700" : "bg-white text-slate-700 ring-slate-200 hover:bg-slate-50"
+                                            }`}
+                                          >
+                                            {val}
+                                          </button>
+                                        );
+                                      })}
+                                    </div>
+                                  </div>
+
+                                  <div className="mt-3">
+                                    <ProgressBar value={current ?? 0} />
+                                    <div className="mt-1 text-xs text-slate-600">
+                                      Seleccionado: <b>{typeof current === "number" ? `${current}/100` : "Sin respuesta"}</b>
+                                    </div>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </Card>
+                    );
+                  })}
+                </div>
+              )}
+
+              {step === "resultados" && (
+                <div className="space-y-5">
+                  <Card className="p-6">
+                    <SectionHeader
+                      title="3) Resultados"
+                      subtitle="Puntuaciones y análisis generado con IA"
+                      right={
+                        <div className="flex flex-wrap gap-2">
+                          <button
+                            onClick={downloadTXT}
+                            className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-slate-800"
+                          >
+                            Descargar informe (TXT)
+                          </button>
+                          <button
+                            onClick={copySummary}
+                            className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-200 hover:bg-slate-50"
+                          >
+                            Copiar resumen
+                          </button>
+                          <button
+                            onClick={() => { setStep("cuestionario"); scrollTop(); }}
+                            className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+                          >
+                            Ajustar respuestas
+                          </button>
+                        </div>
+                      }
+                    />
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-3">
+                      <Card className="p-5 md:col-span-1">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <div className="text-xs font-semibold text-slate-600">Puntuación global</div>
+                            <div className="mt-1 text-3xl font-bold text-slate-900">
+                              {globalScore}<span className="text-base font-semibold text-slate-500">/100</span>
+                            </div>
+                          </div>
+                          <Badge tone={scoreColor(globalScore)}>{scoreLabel(globalScore)}</Badge>
+                        </div>
+                        <div className="mt-4"><ProgressBar value={globalScore} /></div>
+                        <div className="mt-3 text-xs text-slate-600">
+                          Cliente: <b>{customer.nombre || "-"}</b><br />
+                          Empresa: <b>{customer.empresa || "-"}</b>
+                        </div>
+                      </Card>
+
+                      <Card className="p-5 md:col-span-2">
+                        <div className="text-sm font-semibold text-slate-900">Puntuación por área</div>
+                        <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                          {CATEGORIES.map((c) => {
+                            const s = scoresByArea[c.id];
+                            const tone = scoreColor(s);
+                            const bg = { emerald:"bg-emerald-50 ring-emerald-200", amber:"bg-amber-50 ring-amber-200", rose:"bg-rose-50 ring-rose-200" }[tone];
+                            return (
+                              <div key={c.id} className={`rounded-2xl p-4 ring-1 ${bg}`}>
+                                <div className="flex items-start justify-between gap-3">
+                                  <div className="text-sm font-semibold text-slate-900">{c.name}</div>
+                                  <Badge tone={tone}>{s}/100</Badge>
+                                </div>
+                                <div className="mt-3"><ProgressBar value={s} /></div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </Card>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <SectionHeader
+                      title="Análisis con IA"
+                      subtitle="Generado vía /api/analyze (backend seguro)"
+                      right={
+                        <button
+                          onClick={() => {
+                            if (!allQuestionsAnswered()) { alert("Faltan preguntas por responder."); setStep("cuestionario"); return; }
+                            generateAnalysis();
+                          }}
+                          className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700 disabled:opacity-60"
+                          disabled={loadingAI}
+                        >
+                          {loadingAI ? "Regenerando..." : "Regenerar análisis"}
+                        </button>
+                      }
+                    />
+
+                    {errorAI ? (
+                      <div className="mt-4 rounded-2xl bg-rose-50 p-4 text-sm text-rose-800 ring-1 ring-inset ring-rose-200">
+                        <b>Error:</b> {errorAI}
+                      </div>
+                    ) : null}
+
+                    <div className="mt-5 rounded-2xl bg-white ring-1 ring-inset ring-slate-200">
+                      <div className="border-b border-slate-200 px-4 py-3">
+                        <div className="text-xs font-semibold text-slate-600">Informe (texto)</div>
+                      </div>
+                      <div className="p-4">
+                        <pre className="whitespace-pre-wrap break-words text-sm leading-relaxed text-slate-800">
+                          {aiAnalysis || "Aún no se ha generado el análisis. Regresa al cuestionario y presiona 'Finalizar y generar informe'."}
+                        </pre>
+                      </div>
+                    </div>
+                  </Card>
+
+                  <Card className="p-6">
+                    <SectionHeader
+                      title="Datos guardados"
+                      subtitle="Se almacenan en localStorage de este navegador (historial disponible)"
+                      right={
+                        <button
+                          onClick={() => setStep("historial")}
+                          className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-200 hover:bg-slate-50"
+                        >
+                          Ver historial
+                        </button>
+                      }
+                    />
+                    <div className="mt-4 grid gap-3 md:grid-cols-2">
+                      <div className="rounded-2xl bg-slate-50 p-4 text-sm text-slate-700 ring-1 ring-inset ring-slate-200">
+                        <b>¿Qué se guarda?</b>
+                        <ul className="mt-2 list-disc pl-5 text-sm text-slate-600">
+                          <li>Datos del cliente</li>
+                          <li>Respuestas (0–100) por pregunta</li>
+                          <li>Puntuación global y por área</li>
+                          <li>Texto del análisis con IA</li>
+                          <li>Fecha/hora del registro</li>
+                        </ul>
+                      </div>
+                      <div className="rounded-2xl bg-brand-50 p-4 text-sm text-brand-900 ring-1 ring-inset ring-brand-200">
+                        <b>Requisito en Vercel</b>
+                        <ul className="mt-2 list-disc pl-5 text-sm text-brand-900/80">
+                          <li>Variable de entorno <b>ANTHROPIC_API_KEY</b> configurada.</li>
+                          <li>Archivo <b>api/analyze.js</b> presente en el repo.</li>
+                          <li>Luego incrustas en Wix con iframe.</li>
+                        </ul>
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {step === "historial" && (
+                <Card className="p-6">
+                  <SectionHeader
+                    title="Historial (localStorage)"
+                    subtitle="Registros guardados en este navegador"
+                    right={
+                      <div className="flex flex-wrap gap-2">
+                        <button
+                          onClick={() => { setStep("inicio"); scrollTop(); }}
+                          className="inline-flex items-center justify-center rounded-xl bg-brand-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-brand-700"
+                        >
+                          Nuevo diagnóstico
+                        </button>
+                        <button
+                          onClick={clearHistory}
+                          className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-rose-700 ring-1 ring-inset ring-rose-200 hover:bg-rose-50"
+                        >
+                          Borrar historial
+                        </button>
+                      </div>
+                    }
+                  />
+
+                  <div className="mt-6">
+                    {records.length === 0 ? (
+                      <div className="rounded-2xl bg-slate-50 p-6 text-sm text-slate-600 ring-1 ring-inset ring-slate-200">
+                        Aún no hay registros guardados. Genera un análisis y se almacenará automáticamente.
+                      </div>
+                    ) : (
+                      <div className="grid gap-3">
+                        {records.map((r) => {
+                          const tone = scoreColor(r.globalScore || 0);
+                          const bg = { emerald:"bg-emerald-50 ring-emerald-200", amber:"bg-amber-50 ring-amber-200", rose:"bg-rose-50 ring-rose-200" }[tone];
+
+                          return (
+                            <div key={r.id} className={`rounded-2xl p-4 ring-1 ${bg}`}>
+                              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                                <div>
+                                  <div className="text-sm font-semibold text-slate-900">
+                                    {r.customer?.empresa || "Empresa"} — {r.customer?.nombre || "Cliente"}
+                                  </div>
+                                  <div className="mt-1 text-xs text-slate-600">
+                                    Fecha: <b>{r.createdAtLocal || "-"}</b> · Industria: <b>{r.customer?.industria || "-"}</b> · Empleados: <b>{r.customer?.empleados || "-"}</b>
+                                  </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                  <Badge tone={tone}>{(r.globalScore ?? 0) + "/100"}</Badge>
+                                  <button
+                                    onClick={() => loadRecord(r)}
+                                    className="rounded-xl bg-white px-3 py-1.5 text-sm font-semibold text-slate-900 ring-1 ring-inset ring-slate-200 hover:bg-slate-50"
+                                  >
+                                    Abrir
+                                  </button>
+                                </div>
+                              </div>
+
+                              <div className="mt-3 grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+                                {CATEGORIES.map((c) => {
+                                  const s = r.scoresByArea?.[c.id] ?? 0;
+                                  return (
+                                    <div key={c.id} className="rounded-xl bg-white/70 p-3 ring-1 ring-inset ring-white/60">
+                                      <div className="flex items-center justify-between text-xs">
+                                        <span className="font-semibold text-slate-700">{c.name}</span>
+                                        <span className="font-bold text-slate-900">{s}/100</span>
+                                      </div>
+                                      <div className="mt-2"><ProgressBar value={s} /></div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
+                </Card>
+              )}
+
+              <div className="mt-10 text-center text-xs text-slate-500">
+                © {new Date().getFullYear()} — Pre-Diagnóstico Organizacional (PYMEs) · React + Tailwind (CDN) · IA vía /api/analyze
+              </div>
+            </main>
+          </div>
+        );
+      }
+
+      ReactDOM.createRoot(document.getElementById("root")).render(<App />);
+    </script>
+  </body>
+</html>
+
