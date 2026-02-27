@@ -6,22 +6,40 @@ function nowLocal() {
   return `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())} ${pad(dt.getHours())}:${pad(dt.getMinutes())}`;
 }
 
-// ===== Vercel KV (REST) =====
-async function kvSetEx(key, ttlSeconds, value) {
+/** Ejecuta comandos Redis vía REST /pipeline (evita URLs gigantes). */
+async function kvPipeline(commands) {
   const url = process.env.KV_REST_API_URL;
   const token = process.env.KV_REST_API_TOKEN;
   if (!url || !token) throw new Error("Missing KV_REST_API_URL / KV_REST_API_TOKEN");
 
-  // Upstash/Vercel KV REST supports: SETEX key ttl value
-  const r = await fetch(`${url}/setex/${encodeURIComponent(key)}/${ttlSeconds}/${encodeURIComponent(value)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const r = await fetch(`${url}/pipeline`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(commands),
   });
 
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error || `KV SETEX failed: ${r.status}`);
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(`KV pipeline failed: ${r.status} ${JSON.stringify(data)}`);
+
+  // Formato típico: [{ result: ... }] o [{ error: ... }]
+  if (Array.isArray(data)) {
+    const first = data[0];
+    if (first?.error) throw new Error(`KV error: ${first.error}`);
+    return first?.result;
+  }
+
+  // fallback
+  return data?.result;
 }
 
-// ===== SendGrid Mail Send =====
+async function kvSetEx(key, ttlSeconds, value) {
+  // [["SETEX", key, ttl, value]]
+  await kvPipeline([["SETEX", key, String(ttlSeconds), value]]);
+}
+
 async function sendSendGridEmail({ to, subject, text, html }) {
   const apiKey = process.env.SENDGRID_API_KEY;
   const from = process.env.FROM_EMAIL;
@@ -84,7 +102,7 @@ module.exports = async (req, res) => {
       messages: [{ role: "user", content: prompt }],
     };
 
-    const r = await fetch("https://api.anthropic.com/v1/messages", {
+    const a = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -94,21 +112,21 @@ module.exports = async (req, res) => {
       body: JSON.stringify(payload),
     });
 
-    if (!r.ok) {
-      const detail = await r.text().catch(() => "");
-      return res.status(r.status).json({ error: "Anthropic error", detail });
+    if (!a.ok) {
+      const detail = await a.text().catch(() => "");
+      return res.status(a.status).json({ error: "Anthropic error", detail });
     }
 
-    const data = await r.json();
+    const aData = await a.json();
     const aiText =
-      (data?.content || [])
+      (aData?.content || [])
         .map((b) => (b?.type === "text" ? b.text : ""))
         .join("\n")
         .trim() || "";
 
     if (!aiText) return res.status(500).json({ error: "Empty AI response" });
 
-    // 2) Guardar reporte con link único
+    // 2) Guardar reporte (link único)
     const id = crypto.randomBytes(12).toString("hex");
     const token = crypto.randomBytes(18).toString("hex");
     const cleanBase = String(baseUrl).replace(/\/$/, "");
@@ -125,9 +143,10 @@ module.exports = async (req, res) => {
       aiAnalysis: aiText,
     };
 
+    // ✅ aquí ya NO metemos el reporte en la URL
     await kvSetEx(`report:${id}`, ttlSeconds, JSON.stringify(report));
 
-    // 3) Enviar correos
+    // 3) Correos
     const userEmail = (customer?.email || "").trim();
     const company = (customer?.empresa || "Empresa").trim();
     const person = (customer?.nombre || "Cliente").trim();
@@ -153,7 +172,7 @@ Expira en ${ttlDays} día(s).`;
       await sendSendGridEmail({ to: userEmail, subject, text, html });
     }
 
-    // Copia interna (a ti)
+    // Copia interna
     {
       const subject = `Copia interna — Reporte ${company} (${person})`;
       const text =
