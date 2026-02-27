@@ -4,18 +4,35 @@ function esc(s = "") {
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-async function upstashGet(key) {
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
-  if (!url || !token) throw new Error("Missing UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN");
+/** Ejecuta comandos Redis vía REST /pipeline (seguro y sin URL gigantes). */
+async function kvPipeline(commands) {
+  const url = process.env.KV_REST_API_URL;
+  const token = process.env.KV_REST_API_TOKEN;
+  if (!url || !token) throw new Error("Missing KV_REST_API_URL / KV_REST_API_TOKEN");
 
-  const r = await fetch(`${url}/get/${encodeURIComponent(key)}`, {
-    headers: { Authorization: `Bearer ${token}` },
+  const r = await fetch(`${url}/pipeline`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(commands),
   });
 
-  const data = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(data?.error || `Upstash GET failed: ${r.status}`);
+  const data = await r.json().catch(() => null);
+  if (!r.ok) throw new Error(`KV pipeline failed: ${r.status} ${JSON.stringify(data)}`);
+
+  if (Array.isArray(data)) {
+    const first = data[0];
+    if (first?.error) throw new Error(`KV error: ${first.error}`);
+    return first?.result ?? null;
+  }
+
   return data?.result ?? null;
+}
+
+async function kvGet(key) {
+  return kvPipeline([["GET", key]]);
 }
 
 module.exports = async (req, res) => {
@@ -23,7 +40,7 @@ module.exports = async (req, res) => {
     const { id, token } = req.query || {};
     if (!id || !token) return res.status(400).send("Missing id/token");
 
-    const raw = await upstashGet(`report:${id}`);
+    const raw = await kvGet(`report:${id}`);
     if (!raw) return res.status(404).send("Report not found or expired.");
 
     const report = JSON.parse(raw);
