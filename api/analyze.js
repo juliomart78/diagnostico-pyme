@@ -16,8 +16,8 @@ async function safeFetch(url, options, label) {
 
 // ===== Vercel KV via /pipeline (evita límites de URL) =====
 async function kvPipeline(commands) {
-  const url = process.env.KV_REST_API_URL;
-  const token = process.env.KV_REST_API_TOKEN;
+  const url = process.env.KV2_KV_REST_API_URL;
+  const token = process.env.KV2_KV_REST_API_TOKEN;
   if (!url || !token) throw new Error("Missing KV_REST_API_URL / KV_REST_API_TOKEN");
 
   const r = await safeFetch(
@@ -202,3 +202,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: "Server error", detail: e?.message || String(e) });
   }
 };
+
