@@ -14,12 +14,16 @@ async function safeFetch(url, options, label) {
   }
 }
 
-// ===== Vercel KV via /pipeline (evita límites de URL) =====
-async function kvPipeline(commands) {
-  const url = process.env.KV2_KV_REST_API_URL;
-  const token = process.env.KV2_KV_REST_API_TOKEN;
-  if (!url || !token) throw new Error("Missing KV_REST_API_URL / KV_REST_API_TOKEN");
+// KV: usa KV2_ si existe, si no usa KV_
+function getKvEnv() {
+  const url = process.env.KV2_REST_API_URL || process.env.KV_REST_API_URL;
+  const token = process.env.KV2_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
+  if (!url || !token) throw new Error("Missing KV REST env vars (KV2_REST_API_URL/TOKEN or KV_REST_API_URL/TOKEN)");
+  return { url, token };
+}
 
+async function kvPipeline(commands) {
+  const { url, token } = getKvEnv();
   const r = await safeFetch(
     `${url}/pipeline`,
     {
@@ -36,7 +40,7 @@ async function kvPipeline(commands) {
   const txt = await r.text().catch(() => "");
   if (!r.ok) throw new Error(`KV error ${r.status}: ${txt.slice(0, 800)}`);
 
-  let data;
+  let data = null;
   try {
     data = JSON.parse(txt);
   } catch {
@@ -56,7 +60,6 @@ async function kvSetEx(key, ttlSeconds, value) {
   await kvPipeline([["SETEX", key, String(ttlSeconds), value]]);
 }
 
-// ===== SendGrid =====
 async function sendSendGridEmail({ to, subject, text, html }) {
   const apiKey = process.env.SENDGRID_API_KEY;
   const from = process.env.FROM_EMAIL;
@@ -149,7 +152,7 @@ module.exports = async (req, res) => {
 
     if (!aiText) return res.status(500).json({ error: "Empty AI response" });
 
-    // 2) Report URL
+    // 2) URL única del reporte
     const id = crypto.randomBytes(12).toString("hex");
     const token = crypto.randomBytes(18).toString("hex");
     const cleanBase = String(baseUrl).replace(/\/$/, "");
@@ -169,7 +172,7 @@ module.exports = async (req, res) => {
 
     await kvSetEx(`report:${id}`, ttlSeconds, JSON.stringify(report));
 
-    // 4) Emails
+    // 4) Email al usuario + copia admin
     const userEmail = (customer?.email || "").trim();
     const company = (customer?.empresa || "Empresa").trim();
     const person = (customer?.nombre || "Cliente").trim();
@@ -197,18 +200,16 @@ module.exports = async (req, res) => {
         aiText,
     });
 
+    // ✅ respuesta compatible con tu front (evita "IA vacía")
     return res.status(200).json({
-  ok: true,
-  report_url: reportUrl,
-  expires_days: ttlDays,
-
-  // 👇 Compatibilidad con tu front (para que no diga "vacío")
-  analysis: aiText,
-  aiText: aiText,
-  aiAnalysis: aiText,
-});
+      ok: true,
+      report_url: reportUrl,
+      expires_days: ttlDays,
+      aiText,
+      aiAnalysis: aiText,
+      analysis: aiText,
+    });
+  } catch (e) {
     return res.status(500).json({ error: "Server error", detail: e?.message || String(e) });
   }
 };
-
-
