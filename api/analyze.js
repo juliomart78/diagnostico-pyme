@@ -197,9 +197,18 @@ module.exports = async (req, res) => {
         aiText,
     });
 
-    return res.status(200).json({ ok: true, report_url: reportUrl, expires_days: ttlDays });
-  } catch (e) {
+    return res.status(200).json({
+  ok: true,
+  report_url: reportUrl,
+  expires_days: ttlDays,
+
+  // 👇 Compatibilidad con tu front (para que no diga "vacío")
+  analysis: aiText,
+  aiText: aiText,
+  aiAnalysis: aiText,
+});
     return res.status(500).json({ error: "Server error", detail: e?.message || String(e) });
   }
 };
+
 
