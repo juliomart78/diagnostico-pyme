@@ -262,12 +262,11 @@
           if (savedDraft?.aiAnalysis) setAiAnalysis(savedDraft.aiAnalysis);
           if (savedDraft?.step) setStep(savedDraft.step);
         }, []);
-        // ✅ Draft deshabilitado en modo público (privacidad)
-        // useEffect(() => {
-        //   const draft = { customer, responses, aiAnalysis, step };
-        //   localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
-        // }, [customer, responses, aiAnalysis, step]);
-
+// Save draft on changes
+useEffect(() => {
+  const draft = { customer, responses, aiAnalysis, step };
+  localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
+}, [customer, responses, aiAnalysis, step]);
         const questionCountAnswered = useMemo(() => {
           let answered = 0;
           CATEGORIES.forEach((c) => responses[c.id].forEach((v) => { if (typeof v === "number") answered += 1; }));
@@ -1084,6 +1083,7 @@ ${CATEGORIES.map((c) => {
     </script>
   </body>
 </html>
+
 
 
 
