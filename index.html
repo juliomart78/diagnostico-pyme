@@ -446,6 +446,24 @@ ${detail}
 
     // Opcional: abrir reporte privado
     if (data?.report_url) window.open(data.report_url, "_blank");
+    // ✅ Limpia el borrador para que el siguiente usuario no vea datos previos
+localStorage.removeItem(STORAGE_KEYS.draft);
+
+// ✅ Reinicia el diagnóstico (NO borra el historial "records")
+setTimeout(() => {
+  setCustomer({ nombre:"", empresa:"", email:"", telefono:"", cargo:"", industria:"", empleados:"" });
+
+  const obj = {};
+  CATEGORIES.forEach((c) => (obj[c.id] = Array(c.questions.length).fill(null)));
+  setResponses(obj);
+
+  setAiAnalysis("");
+  setErrorAI("");
+  setLoadingAI(false);
+
+  setStep("inicio");
+  scrollTop();
+}, 800);
   } catch (err) {
     setErrorAI(err?.message || "Ocurrió un error al generar el análisis.");
   } finally {
@@ -1069,5 +1087,6 @@ ${CATEGORIES.map((c) => {
     </script>
   </body>
 </html>
+
 
 
