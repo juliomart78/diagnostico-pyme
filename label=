@@ -262,12 +262,11 @@
           if (savedDraft?.aiAnalysis) setAiAnalysis(savedDraft.aiAnalysis);
           if (savedDraft?.step) setStep(savedDraft.step);
         }, []);
-
-        // Save draft on changes
-        useEffect(() => {
-          const draft = { customer, responses, aiAnalysis, step };
-          localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
-        }, [customer, responses, aiAnalysis, step]);
+        // ✅ Draft deshabilitado en modo público (privacidad)
+        // useEffect(() => {
+        //   const draft = { customer, responses, aiAnalysis, step };
+        //   localStorage.setItem(STORAGE_KEYS.draft, JSON.stringify(draft));
+        // }, [customer, responses, aiAnalysis, step]);
 
         const questionCountAnswered = useMemo(() => {
           let answered = 0;
@@ -390,11 +389,9 @@ ${detail}
         }
 
         function saveRecord(record) {
-          const next = [record, ...records];
-          setRecords(next);
-          localStorage.setItem(STORAGE_KEYS.records, JSON.stringify(next));
-        }
-
+  // Historial deshabilitado en modo público: no guardar en localStorage
+  return;
+}
         async function generateAnalysis() {
   setErrorAI("");
 
@@ -596,7 +593,7 @@ ${CATEGORIES.map((c) => {
                   <StepPill active={step === "inicio"} label="1) Datos" onClick={() => setStep("inicio")} />
                   <StepPill active={step === "cuestionario"} label="2) Cuestionario" onClick={() => setStep("cuestionario")} />
                   <StepPill active={step === "resultados"} label="3) Resultados" onClick={() => setStep("resultados")} />
-                  <StepPill active={step === "historial"} label="Historial" onClick={() => setStep("historial")} />
+                  {/* Historial oculto en modo público */}
                 </div>
               </div>
             </div>
@@ -1087,6 +1084,7 @@ ${CATEGORIES.map((c) => {
     </script>
   </body>
 </html>
+
 
 
 
