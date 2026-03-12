@@ -396,54 +396,62 @@ ${detail}
         }
 
         async function generateAnalysis() {
-          setErrorAI("");
+  setErrorAI("");
 
-          if (!validateCustomer()) {
-            setErrorAI("Faltan datos del cliente o el email no es válido. Revisa la pantalla inicial.");
-            return;
-          }
-          if (!allQuestionsAnswered()) {
-            setErrorAI("Debes contestar todas las preguntas antes de generar el análisis con IA.");
-            return;
-          }
+  if (!validateCustomer()) {
+    setErrorAI("Faltan datos del cliente o el email no es válido. Revisa la pantalla inicial.");
+    return;
+  }
+  if (!allQuestionsAnswered()) {
+    setErrorAI("Debes contestar todas las preguntas antes de generar el análisis con IA.");
+    return;
+  }
 
-          setLoadingAI(true);
-          setAiAnalysis("");
+  setLoadingAI(true);
+  setAiAnalysis("");
 
-          try {
-            const prompt = buildPromptForClaude();
+  try {
+    const prompt = buildPromptForClaude();
 
-            // ✅ NUEVO: llama a tu backend /api/analyze (Vercel/Netlify Function)
-            const r = await fetch("/api/analyze", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ prompt }),
-            });
+    const r = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt,
+        customer,
+        scoresByArea,
+        globalScore,
+      }),
+    });
 
-            if (!r.ok) {
-              const err = await r.json().catch(() => ({}));
-              throw new Error(err?.detail || err?.error || `Error HTTP ${r.status}`);
-            }
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err?.detail || err?.error || `Error HTTP ${r.status}`);
+    }
 
-            const data = await r.json();
-            const text = (data?.text || "").trim();
+    const data = await r.json();
+    const text = (data?.analysis || data?.aiText || data?.aiAnalysis || data?.text || "").trim();
 
-            if (!text) throw new Error("La respuesta de la IA llegó vacía. Intenta nuevamente.");
+    if (!text && !data?.report_url) {
+      throw new Error("La respuesta llegó vacía. Intenta nuevamente.");
+    }
 
-            setAiAnalysis(text);
+    setAiAnalysis(text || "");
 
-            const rec = buildRecord(text);
-            saveRecord(rec);
+    const rec = buildRecord(text || "");
+    saveRecord(rec);
 
-            setStep("resultados");
-            scrollTop();
-          } catch (err) {
-            setErrorAI(err?.message || "Ocurrió un error al generar el análisis.");
-          } finally {
-            setLoadingAI(false);
-          }
-        }
+    setStep("resultados");
+    scrollTop();
 
+    // Opcional: abrir reporte privado
+    if (data?.report_url) window.open(data.report_url, "_blank");
+  } catch (err) {
+    setErrorAI(err?.message || "Ocurrió un error al generar el análisis.");
+  } finally {
+    setLoadingAI(false);
+  }
+}
         function buildFullReportText() {
           const header = `PRE-DIAGNÓSTICO ORGANIZACIONAL (PYME)
 ========================================
@@ -1061,4 +1069,5 @@ ${CATEGORIES.map((c) => {
     </script>
   </body>
 </html>
+
 
