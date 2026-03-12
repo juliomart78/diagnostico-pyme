@@ -66,15 +66,21 @@ async function sendSendGridEmail({ to, subject, text, html }) {
   if (!apiKey) throw new Error("Missing SENDGRID_API_KEY");
   if (!from) throw new Error("Missing FROM_EMAIL");
 
-  const payload = {
-    personalizations: [{ to: [{ email: to }] }],
-    from: { email: from },
-    subject,
-    content: [
-      { type: "text/plain", value: text || "" },
-      ...(html ? [{ type: "text/html", value: html }] : []),
-    ],
-  };
+   const payload = {
+  personalizations: [{ to: [{ email: to }] }],
+  from: { email: from },
+  subject,
+  content: [
+    { type: "text/plain", value: text || "" },
+    ...(html ? [{ type: "text/html", value: html }] : []),
+  ],
+
+  // ✅ Evita que SendGrid re-escriba el link (urlXXXX.tudominio.com)
+  tracking_settings: {
+    click_tracking: { enable: false, enable_text: false },
+    open_tracking: { enable: false },
+  },
+};
 
   const r = await safeFetch(
     "https://api.sendgrid.com/v3/mail/send",
@@ -213,3 +219,4 @@ module.exports = async (req, res) => {
     return res.status(500).json({ error: "Server error", detail: e?.message || String(e) });
   }
 };
+
