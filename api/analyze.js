@@ -14,12 +14,30 @@ async function safeFetch(url, options, label) {
   }
 }
 
-// KV: usa KV2_ si existe, si no usa KV_
-function getKvEnv() {
-  const url = process.env.KV2_REST_API_URL || process.env.KV_REST_API_URL;
-  const token = process.env.KV2_REST_API_TOKEN || process.env.KV_REST_API_TOKEN;
-  if (!url || !token) throw new Error("Missing KV REST env vars (KV2_REST_API_URL/TOKEN or KV_REST_API_URL/TOKEN)");
-  return { url, token };
+// KV: usa KV3 si existe, si no KV2, si no KV_ (viejo)
+function getKVEnv() {
+  const url =
+    process.env.KV3_KV_REST_API_URL ||
+    process.env.KV2_KV_REST_API_URL ||
+    process.env.KV_REST_API_URL;
+
+  const token =
+    process.env.KV3_KV_REST_API_TOKEN ||
+    process.env.KV2_KV_REST_API_TOKEN ||
+    process.env.KV_REST_API_TOKEN;
+
+  const readOnly =
+    process.env.KV3_KV_REST_API_READ_ONLY_TOKEN ||
+    process.env.KV2_KV_REST_API_READ_ONLY_TOKEN ||
+    process.env.KV_REST_API_READ_ONLY_TOKEN;
+
+  if (!url || !token) {
+    throw new Error(
+      "Missing KV env vars: KV3_KV_REST_API_URL/TOKEN or KV2_KV_REST_API_URL/TOKEN or KV_REST_API_URL/TOKEN"
+    );
+  }
+
+  return { url, token, readOnly };
 }
 
 async function kvPipeline(commands) {
