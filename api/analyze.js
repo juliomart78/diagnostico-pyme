@@ -221,14 +221,15 @@ module.exports = async (req, res) => {
     });
 
     // ✅ respuesta compatible con tu front (evita "IA vacía")
-    return res.status(200).json({
-      ok: true,
-      report_url: reportUrl,
-      expires_days: ttlDays,
-      aiText,
-      aiAnalysis: aiText,
-      analysis: aiText,
-    });
+return res.status(200).json({
+  ok: true,
+  report_url: reportUrl,
+  expires_days: ttlDays,
+  text: aiText,          // ✅ ESTA LÍNEA
+  aiText,
+  aiAnalysis: aiText,
+  analysis: aiText,
+});
   } catch (e) {
     return res.status(500).json({ error: "Server error", detail: e?.message || String(e) });
   }
