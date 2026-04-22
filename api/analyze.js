@@ -14,27 +14,23 @@ async function safeFetch(url, options, label) {
   }
 }
 
-// KV: usa KV3 si existe, si no KV2, si no KV_ (viejo)
+// KV: usa KV3 si existe, si no KV2. (NO usa KV_ viejo)
 function getKVEnv() {
   const url =
     process.env.KV3_KV_REST_API_URL ||
-    process.env.KV2_KV_REST_API_URL ||
-    process.env.KV_REST_API_URL;
+    process.env.KV2_KV_REST_API_URL;
 
   const token =
     process.env.KV3_KV_REST_API_TOKEN ||
-    process.env.KV2_KV_REST_API_TOKEN ||
-    process.env.KV_REST_API_TOKEN;
+    process.env.KV2_KV_REST_API_TOKEN;
 
   const readOnly =
     process.env.KV3_KV_REST_API_READ_ONLY_TOKEN ||
     process.env.KV2_KV_REST_API_READ_ONLY_TOKEN ||
-    process.env.KV_REST_API_READ_ONLY_TOKEN;
+    ""; // opcional
 
   if (!url || !token) {
-    throw new Error(
-      "Missing KV env vars: KV3_KV_REST_API_URL/TOKEN or KV2_KV_REST_API_URL/TOKEN or KV_REST_API_URL/TOKEN"
-    );
+    throw new Error("Missing KV env vars: KV3_KV_REST_API_URL/TOKEN or KV2_KV_REST_API_URL/TOKEN");
   }
 
   return { url, token, readOnly };
