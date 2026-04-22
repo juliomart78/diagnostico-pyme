@@ -15,7 +15,7 @@ async function safeFetch(url, options, label) {
 }
 
 // KV: usa KV3 si existe, si no KV2. (NO usa KV_ viejo)
-function getKVEnv() {
+function getKvEnv() {
   const url =
     process.env.KV3_KV_REST_API_URL ||
     process.env.KV2_KV_REST_API_URL;
