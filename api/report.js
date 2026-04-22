@@ -3,12 +3,38 @@ function esc(s = "") {
     .replace(/&/g, "&amp;").replace(/</g, "&lt;")
     .replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+function getKVEnv() {
+  // Preferimos KV3 (activo). Si no existe, intentamos KV2 y por último KV_.
+  const url =
+    process.env.KV3_KV_REST_API_URL ||
+    process.env.KV2_KV_REST_API_URL ||
+    process.env.KV_REST_API_URL;
+
+  // Para report.js conviene usar READ_ONLY si existe
+  const token =
+    process.env.KV3_KV_REST_API_READ_ONLY_TOKEN ||
+    process.env.KV2_KV_REST_API_READ_ONLY_TOKEN ||
+    process.env.KV3_KV_REST_API_TOKEN ||
+    process.env.KV2_KV_REST_API_TOKEN ||
+    process.env.KV_REST_API_READ_ONLY_TOKEN ||
+    process.env.KV_REST_API_TOKEN;
+
+  if (!url || !token) {
+    throw new Error(
+      "Missing KV env vars. Need KV3_KV_REST_API_URL and (KV3_KV_REST_API_READ_ONLY_TOKEN or KV3_KV_REST_API_TOKEN)."
+    );
+  }
+
+  // Limpieza por si vienen comillas o slash final
+  const cleanUrl = String(url).trim().replace(/^"+|"+$/g, "").replace(/\/$/, "");
+  const cleanToken = String(token).trim().replace(/^"+|"+$/g, "");
+
+  return { url: cleanUrl, token: cleanToken };
+}
 
 /** Ejecuta comandos Redis vía REST /pipeline (seguro y sin URL gigantes). */
 async function kvPipeline(commands) {
-  const url = process.env.KV2_KV_REST_API_URL;
-  const token = process.env.KV2_KV_REST_API_TOKEN;
-  if (!url || !token) throw new Error("Missing KV_REST_API_URL / KV_REST_API_TOKEN");
+const { url, token } = getKVEnv();
 
   const r = await fetch(`${url}/pipeline`, {
     method: "POST",
